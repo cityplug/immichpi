@@ -161,6 +161,46 @@ function immich_cleanup() {
     fi
 }
 
+# === SMB Sharing ===
+function smb_share_setup() {
+    IMMICH_MOUNT="/immichpi"
+    SHARE_NAME="ImmichShare"
+
+    read -rp "Setup Samba sharing for $IMMICH_MOUNT (visible on Windows)? (y/n): " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "📦 Installing Samba..."
+        apt install -y samba
+
+        echo "📄 Configuring Samba share..."
+        if ! grep -q "^\[$SHARE_NAME\]" /etc/samba/smb.conf; then
+            tee -a /etc/samba/smb.conf > /dev/null <<EOF
+
+[$SHARE_NAME]
+   path = $IMMICH_MOUNT
+   valid users = $USERNAME
+   browsable = yes
+   read only = no
+   guest ok = no
+   writable = yes
+EOF
+        fi
+
+        mkdir -p "$IMMICH_MOUNT"
+        chown "$USERNAME:$USERNAME" "$IMMICH_MOUNT"
+
+        echo "🔐 Creating Samba password for user '$USERNAME'"
+        smbpasswd -a "$USERNAME"
+
+        echo "🔁 Restarting Samba service..."
+        systemctl restart smbd
+        systemctl enable smbd
+
+        echo "✅ SMB Share '$SHARE_NAME' is ready. Access it in Windows as: \\\\$(hostname -I | awk '{print $1}')\\$SHARE_NAME"
+    else
+        echo "❌ Skipped SMB share setup."
+    fi
+}
+
 # === Auto Run ===
 function autorun_setup() {
     configure_hostname
@@ -201,8 +241,9 @@ function menu() {
         echo "9. Mount Immich NVMe"
         echo "10. Immich Setup"
         echo "11. Auto Run Full Setup"
-        echo "12. Remove Immich + Data"
-        echo "13. Reboot Server"
+        echo "12. Setup SMB Share for /immichpi"
+        echo "13. Remove Immich + Data"
+        echo "14. Reboot Server"
         echo "0. Exit"
         echo "============================="
         read -rp "Select an option: " choice
@@ -218,8 +259,9 @@ function menu() {
             9) mount_immich_drive;;
             10) immich_setup;;
             11) autorun_setup;;
-            12) immich_cleanup;;
-            13) reboot_server;;
+            12) smb_share_setup;;
+            13) immich_cleanup;;
+            14) reboot_server;;
             0) echo "Exiting..."; break;;
             *) echo "❌ Invalid selection.";;
         esac
